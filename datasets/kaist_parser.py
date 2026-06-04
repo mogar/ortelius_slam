@@ -306,7 +306,7 @@ if __name__ == "__main__":
     loop_count = 0
     loop_limit = 100
     for sensor_name, measurement in dataset.iter_synchronized(['encoder', 'imu', 'gps']):
-        print(f"{sensor_name} @ {measurement.timestamp}: {measurement}")
+        print(f"{loop_count}:{sensor_name} @ {measurement.timestamp}: {measurement}")
         loop_count += 1
         if loop_count >= loop_limit:
             break
