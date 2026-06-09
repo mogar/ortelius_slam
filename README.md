@@ -2,6 +2,10 @@
 
 SLAM experiments using factor graphs (eventually with iSAM2).
 
+## TODO
+
+* fix graph manager update_graph method
+
 ## Setup
 
 ```bash

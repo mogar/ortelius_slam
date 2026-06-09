@@ -270,14 +270,14 @@ class KaistUrbanDataset:
     def iter_synchronized(self, sensors: list[str]):
         """
         Yield measurements in timestamp order for the requested sensor types.
-        sensors: subset of ['encoder', 'imu', 'VRS_GPS', 'fog', ...]
+        sensors: subset of ['encoder', 'imu', 'vrs', 'fog', ...]
                  as they appear in data_stamp.csv
         """
         sensor_set = set(sensors)
         lookup = {
             'encoder': self.encoder_index,
             'imu':     self.imu_index,
-            'VRS_GPS': self.vrs_gps_index,
+            'vrs':     self.vrs_gps_index,
             'gps':     self.gps_index,
             'fog':     self.fog_index,
         }

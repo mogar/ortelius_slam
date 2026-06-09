@@ -33,7 +33,7 @@ class GraphManager:
 
         self.isam2_params = ISAM2Params()
         self.isam2_params.setRelinearizeThreshold(self.config.relinearize_threshold)
-        self.isam2_params.setRelinearizeSkip(self.config.relinearize_skip)
+        self.isam2_params.relinearizeSkip = self.config.relinearize_skip
 
         self.isam2 = ISAM2(self.isam2_params)
 
@@ -42,7 +42,7 @@ class GraphManager:
         self.new_values = Values()
 
         # Bookkeeping for graph management
-        self.pose_keys = list[int] = [] # ordered list of active pose keys
+        self.pose_keys: list[int] = [] # ordered list of active pose keys
         self.step_count = 0
         self.current_estimate: Values | None = None
 
@@ -116,4 +116,6 @@ class GraphManager:
 
     def get_all_estimates(self) -> list[tuple[int, gtsam.Value]]:
         """Retrieve the current estimates for all variables."""
+        if self.current_estimate is None:
+            return []
         return [(key, self.current_estimate.at(key)) for key in self.current_estimate.keys()]
