@@ -17,6 +17,7 @@ import gtsam
 from gtsam import ISAM2, ISAM2Params, NonlinearFactorGraph, Values
 from dataclasses import dataclass, field
 
+
 @dataclass
 class GraphManagerConfig:
     """Configuration for GraphManager."""
@@ -25,14 +26,16 @@ class GraphManagerConfig:
     relinearize_threshold: float = 0.1
     relinearize_skip: int = 1
 
+
 class GraphManager:
     """Manages the factor graph and ISAM2 optimizer."""
-    
+
     def __init__(self, config: GraphManagerConfig = GraphManagerConfig()):
         self.config = config
 
         self.isam2_params = ISAM2Params()
-        self.isam2_params.setRelinearizeThreshold(self.config.relinearize_threshold)
+        self.isam2_params.setRelinearizeThreshold(
+            self.config.relinearize_threshold)
         self.isam2_params.relinearizeSkip = self.config.relinearize_skip
 
         self.isam2 = ISAM2(self.isam2_params)
@@ -42,7 +45,7 @@ class GraphManager:
         self.new_values = Values()
 
         # Bookkeeping for graph management
-        self.pose_keys: list[int] = [] # ordered list of active pose keys
+        self.pose_keys: list[int] = []  # ordered list of active pose keys
         self.step_count = 0
         self.current_estimate: Values | None = None
 
@@ -76,6 +79,7 @@ class GraphManager:
         """Trigger an ISAM2 update."""
         self.step_count += 1
         if not force and self.new_factors.size() < self.config.max_factors_before_update:
+            print(f"Step {self.step_count}: Only {self.new_factors.size()} new factors, not updating yet.")
             return  # Not enough new factors to justify an update
 
         self.isam2.update(self.new_factors, self.new_values)
@@ -89,7 +93,7 @@ class GraphManager:
 
         if len(self.pose_keys) > self.config.max_poses_before_marginalization:
             self.marginalize_old_poses()
-        
+
     def marginalize_old_poses(self) -> None:
         """Marginalize old poses to constrain graph size."""
         # GTSAM's marginalizeLeaves removes variables and folds their
@@ -103,15 +107,20 @@ class GraphManager:
         self.isam2.marginalizeLeaves(keys_to_remove)
         self.pose_keys.pop(0)
 
-    def get_estimate(self, index:int) -> gtsam.Values:
+    def get_estimate(self, index: int) -> gtsam.Values:
         """Retrieve the current estimate for a variable."""
         key = self.pose_keys[index]
-        return self.isam2.calculateEstimate().at(key)
+        if self.current_estimate is None or not self.current_estimate.exists(key):
+            if self.new_values.exists(key):
+                return self.new_values.atPose2(key)
+            return None
+        return self.current_estimate.atPose2(key)
 
-    def get_marginal_covariance(self, index:int) -> ...:
+    def get_marginal_covariance(self, index: int) -> ...:
         """Retrieve the marginal covariance for a variable."""
         key = self.pose_keys[index]
-        marginals = gtsam.Marginals(self.isam2.getFactorsUnsafe(), self.current_estimate)
+        marginals = gtsam.Marginals(
+            self.isam2.getFactorsUnsafe(), self.current_estimate)
         return marginals.marginalCovariance(key)
 
     def get_all_estimates(self) -> list[tuple[int, gtsam.Value]]:
