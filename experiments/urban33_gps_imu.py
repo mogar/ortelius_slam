@@ -80,6 +80,7 @@ def run_experiment(dataset_root: str, max_steps: int = 500):
         max_poses_before_marginalization=100,
         relinearize_threshold=0.1,
         relinearize_skip=1,
+        lag=0.5,
     )
     graph_manager = GraphManager(config)
 
@@ -92,6 +93,7 @@ def run_experiment(dataset_root: str, max_steps: int = 500):
         if step >= max_steps:
             break
 
+        m_time = float(measurement.timestamp)/1e9
         if sensor_name == 'vrs':
             # TODO: check fix state? If the GPS measurement is not reliable, we might want to skip adding a factor for it
             gps_x = measurement.easting - origin.x()
@@ -103,7 +105,7 @@ def run_experiment(dataset_root: str, max_steps: int = 500):
                 # Add a prior factor for the initial pose based on the first GPS measurement
                 key = graph_manager.pose_key(pose_index)
                 curr_pose = gtsam.Pose2(gps_x, gps_y, 0.0)
-                graph_manager.add_variable(key, curr_pose)
+                graph_manager.add_variable(key, curr_pose, m_time)
                 for f in PriorFactor(key, gps_x, gps_y, sigma_x, sigma_y).build():
                     graph_manager.add_factor(f)
                 initialized = True
@@ -136,7 +138,7 @@ def run_experiment(dataset_root: str, max_steps: int = 500):
                 curr_key = graph_manager.pose_key(pose_index)
                 # dead-reckon the new pose based on odometry
                 curr_pose = prev_pose.compose(gtsam.Pose2(dx, dy, dtheta))
-                graph_manager.add_variable(curr_key, curr_pose)
+                graph_manager.add_variable(curr_key, curr_pose, m_time)
 
                 # TODO: maybe estimate odometry noise based on encoder counts or time delta?
                 # For now we use fixed noise parameters
@@ -150,11 +152,11 @@ def run_experiment(dataset_root: str, max_steps: int = 500):
             prev_encoder = measurement
 
         # Update the graph after adding new factors and variables
-        # TODO: don't force update after gps factor is fixed
-        graph_manager.update_graph(True)
+        graph_manager.update_graph()
         step += 1
 
         if step % 50 == 0:
+            graph_manager.update_graph(True)
             print(f"Step {step}: Added factors and updated graph.")
             current_pose = graph_manager.current_estimate.atPose2(
                 graph_manager.pose_key(pose_index))

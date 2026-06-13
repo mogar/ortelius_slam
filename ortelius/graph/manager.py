@@ -15,6 +15,7 @@ Major responsibilities include:
 
 import gtsam
 from gtsam import ISAM2, ISAM2Params, NonlinearFactorGraph, Values
+from gtsam_unstable import IncrementalFixedLagSmoother, FixedLagSmootherKeyTimestampMap
 from dataclasses import dataclass, field
 
 
@@ -25,6 +26,7 @@ class GraphManagerConfig:
     max_poses_before_marginalization: int = 100
     relinearize_threshold: float = 0.1
     relinearize_skip: int = 1
+    lag: float = 30.0
 
 
 class GraphManager:
@@ -38,7 +40,7 @@ class GraphManager:
             self.config.relinearize_threshold)
         self.isam2_params.relinearizeSkip = self.config.relinearize_skip
 
-        self.isam2 = ISAM2(self.isam2_params)
+        self.graph = IncrementalFixedLagSmoother(self.config.lag)
 
         # Pending additions to the graph before the next update
         self.new_factors = NonlinearFactorGraph()
@@ -46,6 +48,7 @@ class GraphManager:
 
         # Bookkeeping for graph management
         self.pose_keys: list[int] = []  # ordered list of active pose keys
+        self.new_timestamps = FixedLagSmootherKeyTimestampMap()
         self.step_count = 0
         self.current_estimate: Values | None = None
 
@@ -69,43 +72,29 @@ class GraphManager:
         """Add a factor to the graph."""
         self.new_factors.add(factor)
 
-    def add_variable(self, key, value) -> None:
+    def add_variable(self, key, value, timestamp) -> None:
         """Add a variable to the graph."""
         self.new_values.insert(key, value)
+        self.new_timestamps.insert((key, timestamp))
         if isinstance(value, gtsam.Pose3) or isinstance(value, gtsam.Pose2):
             self.pose_keys.append(key)
 
     def update_graph(self, force: bool = False) -> None:
-        """Trigger an ISAM2 update."""
+        """Trigger a graph update."""
         self.step_count += 1
         if not force and self.new_factors.size() < self.config.max_factors_before_update:
-            print(f"Step {self.step_count}: Only {self.new_factors.size()} new factors, not updating yet.")
             return  # Not enough new factors to justify an update
 
-        self.isam2.update(self.new_factors, self.new_values)
+        # Note that with a fixed lag smoother the old values get marginalized out automatically
+        self.graph.update(self.new_factors, self.new_values, self.new_timestamps)
         # TODO: extra iterations to relinearize? Maybe check step count instead of just new factor count?
 
-        self.current_estimate = self.isam2.calculateEstimate()
+        self.current_estimate = self.graph.calculateEstimate()
 
         # Clear the new factors and values after update to prepare for new factors and variables
         self.new_factors.resize(0)
         self.new_values.clear()
-
-        if len(self.pose_keys) > self.config.max_poses_before_marginalization:
-            self.marginalize_old_poses()
-
-    def marginalize_old_poses(self) -> None:
-        """Marginalize old poses to constrain graph size."""
-        # GTSAM's marginalizeLeaves removes variables and folds their
-        # information into a prior on their neighbors. The key list
-        # passed in must be leaves in the Bayes tree — oldest poses
-        # usually qualify, but you should verify before generalizing.
-        keys_to_remove = gtsam.KeyVector()
-        # TODO: check for leaf status before adding to keys_to_remove
-        keys_to_remove.append(self.pose_keys[0])
-
-        self.isam2.marginalizeLeaves(keys_to_remove)
-        self.pose_keys.pop(0)
+        self.new_timestamps.clear()
 
     def get_estimate(self, index: int) -> gtsam.Values:
         """Retrieve the current estimate for a variable."""
@@ -120,7 +109,7 @@ class GraphManager:
         """Retrieve the marginal covariance for a variable."""
         key = self.pose_keys[index]
         marginals = gtsam.Marginals(
-            self.isam2.getFactorsUnsafe(), self.current_estimate)
+            self.graph.getFactorsUnsafe(), self.current_estimate)
         return marginals.marginalCovariance(key)
 
     def get_all_estimates(self) -> list[tuple[int, gtsam.Value]]:
